@@ -15,9 +15,57 @@ const scenarioNames = {
 
 function ChatPage({ scenarioId, onBack }) {
   const [inputText, setInputText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const { messages, isLoading, error, sendMessage, loadOpening } = useChat(scenarioId);
   const chatBottomRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // 检测浏览器是否支持语音识别
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(r => r[0].transcript)
+          .join('');
+        setInputText(transcript);
+        if (event.results[event.results.length - 1].isFinal) {
+          setIsListening(false);
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setInputText('');
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
 
   // 加载开场白
   useEffect(() => {
@@ -152,48 +200,87 @@ function ChatPage({ scenarioId, onBack }) {
         boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
         flexShrink: 0,
       }}>
-        <div style={{
-          fontSize: 17,
-          color: '#BDBDBD',
-          marginBottom: 10,
-          textAlign: 'center',
-        }}>
-          📝 打字练习（第二阶段会加语音按钮）
-        </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+        {/* 语音状态提示 */}
+        {isListening && (
+          <div style={{
+            textAlign: 'center',
+            marginBottom: 10,
+            fontSize: 18,
+            color: '#E53935',
+            animation: 'pulse 1s infinite',
+          }}>
+            🔴 正在聆听，请说英语...
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          {/* 麦克风语音按钮 */}
+          {speechSupported && (
+            <button
+              onClick={toggleVoice}
+              disabled={isLoading}
+              title={isListening ? '停止录音' : '按下说话'}
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                border: 'none',
+                background: isListening ? '#E53935' : '#FF7043',
+                color: 'white',
+                fontSize: 28,
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: isListening
+                  ? '0 0 0 6px rgba(229,57,53,0.3)'
+                  : '0 3px 10px rgba(255,112,67,0.4)',
+                transition: 'all 0.2s',
+                opacity: isLoading ? 0.5 : 1,
+              }}
+              aria-label={isListening ? '停止录音' : '语音输入'}
+            >
+              {isListening ? '⏹' : '🎤'}
+            </button>
+          )}
+
+          {/* 文字输入框 */}
           <textarea
             ref={inputRef}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="在这里打字说英语，按回车发送..."
-            disabled={isLoading}
+            placeholder={speechSupported ? '按🎤说话，或在这里打字...' : '在这里打字说英语，按回车发送...'}
+            disabled={isLoading || isListening}
             style={{
               flex: 1,
               fontSize: 22,
               padding: '14px 18px',
               borderRadius: 14,
-              border: '2px solid #FFB74D',
+              border: `2px solid ${isListening ? '#E53935' : '#FFB74D'}`,
               outline: 'none',
               resize: 'none',
               fontFamily: 'Georgia, serif',
               lineHeight: 1.5,
               background: inputText ? 'white' : '#FAFAFA',
-              minHeight: 56,
+              minHeight: 64,
               maxHeight: 120,
               transition: 'border-color 0.15s',
             }}
             onFocus={(e) => e.target.style.borderColor = '#FF7043'}
-            onBlur={(e) => e.target.style.borderColor = '#FFB74D'}
+            onBlur={(e) => { if (!isListening) e.target.style.borderColor = '#FFB74D'; }}
             rows={1}
           />
+
+          {/* 发送按钮 */}
           <button
             onClick={() => handleSend()}
             disabled={!inputText.trim() || isLoading}
             className="btn-large btn-primary"
             style={{
               minWidth: 72,
-              height: 56,
+              height: 64,
               fontSize: 26,
               opacity: (!inputText.trim() || isLoading) ? 0.5 : 1,
             }}
